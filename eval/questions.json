@@ -1,0 +1,58 @@
+[
+  {
+    "id": "q1",
+    "question": "How does the consumer avoid double-processing an order if the same message gets redelivered?",
+    "expected_sources": ["consumer/worker.py"],
+    "in_scope": true,
+    "notes": "Should mention the status check and/or the SELECT ... FOR UPDATE row lock."
+  },
+  {
+    "id": "q2",
+    "question": "What happens to an order after it exhausts its retry budget?",
+    "expected_sources": ["consumer/worker.py", "shared/rabbitmq.py"],
+    "in_scope": true,
+    "notes": "Should mention the DLQ (dead-letter queue) and status becoming 'failed'."
+  },
+  {
+    "id": "q3",
+    "question": "What value is MAX_RETRIES set to, and where is it defined?",
+    "expected_sources": ["shared/rabbitmq.py"],
+    "in_scope": true,
+    "notes": "Exact-identifier question -- tests whether the keyword-search fallback tool actually helps when vector search alone might miss it."
+  },
+  {
+    "id": "q4",
+    "question": "How does the producer prevent creating a duplicate order if a client retries a POST /orders request?",
+    "expected_sources": ["producer/app.py", "shared/models.py", "README.md"],
+    "in_scope": true,
+    "notes": "Idempotency-Key header + unique constraint on idempotency_key."
+  },
+  {
+    "id": "q5",
+    "question": "How many consumer replicas does the Kubernetes deployment run, and why?",
+    "expected_sources": ["k8s/04-consumer.yaml"],
+    "in_scope": true,
+    "notes": "replicas: 1, disclosed reason is the free-tier VM's 1GB RAM limit."
+  },
+  {
+    "id": "q6",
+    "question": "What does the CI pipeline actually test against -- mocks or real services?",
+    "expected_sources": [".github/workflows/ci.yml"],
+    "in_scope": true,
+    "notes": "Real Postgres + RabbitMQ service containers."
+  },
+  {
+    "id": "q7",
+    "question": "What color is the CEO's car?",
+    "expected_sources": [],
+    "in_scope": false,
+    "notes": "Deliberately unanswerable from this repo -- tests that the agent declines instead of hallucinating."
+  },
+  {
+    "id": "q8",
+    "question": "What was Sai's GPA in his final year of college?",
+    "expected_sources": [],
+    "in_scope": false,
+    "notes": "Out-of-scope for a repo-QA agent even though it's a fact about the author -- not indexed content."
+  }
+]

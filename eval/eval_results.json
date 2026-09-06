@@ -1,0 +1,203 @@
+{
+  "retrieval_precision_at_k": 0.8333333333333334,
+  "retrieval_results": [
+    {
+      "id": "q1",
+      "hit": true,
+      "retrieved_sources": [
+        "README.md",
+        "consumer/worker.py",
+        "producer/app.py",
+        "shared/rabbitmq.py"
+      ]
+    },
+    {
+      "id": "q2",
+      "hit": true,
+      "retrieved_sources": [
+        "README.md",
+        "consumer/worker.py",
+        "shared/rabbitmq.py"
+      ]
+    },
+    {
+      "id": "q3",
+      "hit": true,
+      "retrieved_sources": [
+        "consumer/worker.py",
+        "shared/rabbitmq.py",
+        "tests/test_consumer.py"
+      ]
+    },
+    {
+      "id": "q4",
+      "hit": true,
+      "retrieved_sources": [
+        "README.md",
+        "consumer/worker.py",
+        "producer/app.py"
+      ]
+    },
+    {
+      "id": "q5",
+      "hit": true,
+      "retrieved_sources": [
+        "README.md",
+        "k8s/01-postgres.yaml",
+        "k8s/02-rabbitmq.yaml",
+        "k8s/03-producer.yaml",
+        "k8s/04-consumer.yaml"
+      ]
+    },
+    {
+      "id": "q6",
+      "hit": false,
+      "retrieved_sources": [
+        "README.md",
+        "k8s/03-producer.yaml",
+        "tests/test_consumer.py",
+        "tests/test_producer.py"
+      ]
+    }
+  ],
+  "rag_vs_baseline": [
+    {
+      "id": "q1",
+      "question": "How does the consumer avoid double-processing an order if the same message gets redelivered?",
+      "in_scope": true,
+      "rag_answer": "The consumer avoids double-processing redelivered messages through the following mechanisms:\n\n*   **Idempotency Check**: Before performing any work, the consumer checks the order's current status in Postgres. If the status is already `completed`, the handler returns immediately with no side effects [README.md:39-44, consumer/worker.py:3-8].\n*   **Atomic Critical Section**: The consumer performs an initial read using `SELECT ... FOR UPDATE` [consumer/worker.py:46]. This ensures that if two instances attempt to process the same `order_id` concurrently, the second call blocks on the row lock until the first transaction commits [consumer/worker.py:48-52]. \n*   **Atomic Commit**: The entire \"claim-through-completion\" sequence is committed once at the end of the function rather than mid-function [consumer/worker.py:47-48]. This eliminates the TOCTOU (Time-of-check to time-of-use) gap that would otherwise exist between the status check and the status write [consumer/worker.py:53-54].",
+      "rag_sources": [
+        "README.md",
+        "consumer/worker.py",
+        "producer/app.py",
+        "shared/rabbitmq.py"
+      ],
+      "rag_tools_used": [],
+      "baseline_answer": "Answer: I do not have access to your specific codebase, so I cannot tell you how it currently handles idempotency.\n\nTo implement this functionality, common industry patterns typically involve one of the following approaches:\n\n1.  **Idempotency Keys (Database):** The consumer stores a unique `order_id` (or a transaction ID from the message header) in a \"processed_orders\" table within the same database transaction that updates the order status. If a duplicate message arrives, the database constraint (unique index) will cause the insert to fail, and the consumer can safely acknowledge and discard the redelivered message.\n2.  **Distributed Locking (Redis/Zookeeper):** Before processing, the consumer attempts to set a key in a distributed cache (like Redis) with a TTL (Time-To-Live). If the key already exists, the consumer knows the message is currently being processed or has already been processed and skips it.\n3.  **State Checking:** The consumer checks the current state of the order in the database. If the order is already in a \"Completed\" or \"Processed\" state, the consumer ignores the message and acknowledges it.\n4.  **Optimistic Locking:** Using a version column in the database record; if the version has changed since the message was first read, the process rejects the update.\n\nIf you can provide the language, framework, and messaging infrastructure (e.g., Kafka, RabbitMQ, SQS) being used, I can explain which of these patterns is most idiomatic for your stack."
+    },
+    {
+      "id": "q2",
+      "question": "What happens to an order after it exhausts its retry budget?",
+      "in_scope": true,
+      "rag_answer": "After an order exhausts its retry budget (reaching `MAX_RETRIES`), it is published to `orders.dlq` and the order is marked as `failed` in the database [README.md:65-68, consumer/worker.py:73-76]. Once an order is in the DLQ, nothing automatically retries it; it requires a human to examine it [README.md:68, shared/rabbitmq.py:10-12].",
+      "rag_sources": [
+        "README.md",
+        "consumer/worker.py",
+        "shared/rabbitmq.py"
+      ],
+      "rag_tools_used": [],
+      "baseline_answer": "I do not have access to your codebase, so I cannot provide a specific answer. \n\nTo determine this, you would need to search your codebase for the logic that handles the exhaustion of retry attempts (often found in task queues, state machines, or order processing services). You should look for:\n\n1.  **Status Transitions:** Check if the order is moved to a status like `FAILED`, `CANCELLED`, or `MANUAL_INTERVENTION_REQUIRED`.\n2.  **Dead Letter Queues (DLQ):** Determine if the order object is pushed to a DLQ for asynchronous processing or developer review.\n3.  **Alerting/Notifications:** Check for triggers that notify an administrator or customer service team when an order reaches this terminal state.\n4.  **Logging:** Look for specific error logging patterns that occur when a `retry_count` exceeds a `max_retries` threshold. \n\nIf you provide the relevant code snippets or the framework being used (e.g., Sidekiq, Celery, Temporal, etc.), I can help you analyze how that specific logic is typically implemented."
+    },
+    {
+      "id": "q3",
+      "question": "What value is MAX_RETRIES set to, and where is it defined?",
+      "in_scope": true,
+      "rag_answer": "MAX_RETRIES is set to 3. It is defined in `shared/rabbitmq.py` [shared/rabbitmq.py:28].",
+      "rag_sources": [
+        "README.md",
+        "consumer/worker.py",
+        "shared/rabbitmq.py",
+        "tests/test_consumer.py"
+      ],
+      "rag_tools_used": [
+        {
+          "tool": "search_keyword",
+          "term": "MAX_RETRIES",
+          "hit_count": 8
+        }
+      ],
+      "baseline_answer": "Answer: I do not have access to your specific codebase, so I cannot tell you the value of `MAX_RETRIES` or where it is defined."
+    },
+    {
+      "id": "q4",
+      "question": "How does the producer prevent creating a duplicate order if a client retries a POST /orders request?",
+      "in_scope": true,
+      "rag_answer": "The producer prevents the creation of duplicate orders by utilizing an `Idempotency-Key` header sent by the client. When a `POST /orders` request includes this key, the producer queries the database to check if an order with that specific `Idempotency-Key` already exists. If an existing order is found, the producer returns that order instead of creating a new one [producer/app.py:46-52].",
+      "rag_sources": [
+        "README.md",
+        "consumer/worker.py",
+        "producer/app.py"
+      ],
+      "rag_tools_used": [],
+      "baseline_answer": "I do not have access to your specific codebase, so I cannot tell you how it is currently implemented.\n\nHowever, in professional software engineering, this is typically handled in one of three ways. You can check your codebase for these patterns:\n\n1.  **Idempotency Keys:** The most common approach is for the client to generate a unique identifier (a UUID) and send it in a custom header (e.g., `Idempotency-Key: <uuid>`). The server stores this key in a database/cache (like Redis) with a short TTL. Before processing an order, the server checks if the key already exists; if it does, it returns the previous result instead of creating a new order.\n2.  **Database Constraints:** The system may rely on a `UNIQUE` constraint in the database schema on a business-relevant field (such as a composite key of `user_id` + `client_side_request_timestamp` or an external reference ID provided by the client). When a duplicate attempt is made, the database throws an error, which the service catches and handles (or maps to a 409 Conflict).\n3.  **State Machine Checks:** The application layer might check the current state of a user's pending orders. If a request comes in for an order that matches the parameters of one already marked as \"Pending\" or \"Processing\" within a specific time window, the server treats it as a duplicate and ignores the secondary request.\n\n**To find the specific answer in your project, I recommend searching your codebase for:**\n*   Keywords like `Idempotency`, `X-Idempotency-Key`, or `request_id`.\n*   The `POST /orders` controller or handler function to see if it performs a lookup before executing the insertion logic.\n*   Your database migration files to see if there are `UNIQUE` constraints on the `orders` table."
+    },
+    {
+      "id": "q5",
+      "question": "How many consumer replicas does the Kubernetes deployment run, and why?",
+      "in_scope": true,
+      "rag_answer": "The Kubernetes deployment runs 1 consumer replica [k8s/04-consumer.yaml:12]. This is done because the environment is a single free-tier VM with only 1GB of total RAM, and the deployment is resource-constrained [k8s/04-consumer.yaml:4-5, k8s/03-producer.yaml:3-5].",
+      "rag_sources": [
+        "README.md",
+        "k8s/01-postgres.yaml",
+        "k8s/02-rabbitmq.yaml",
+        "k8s/03-producer.yaml",
+        "k8s/04-consumer.yaml"
+      ],
+      "rag_tools_used": [],
+      "baseline_answer": "Answer: I do not know the specific codebase or Kubernetes configuration you are referring to, so I cannot tell you how many consumer replicas are running or the rationale behind that scaling decision."
+    },
+    {
+      "id": "q6",
+      "question": "What does the CI pipeline actually test against -- mocks or real services?",
+      "in_scope": true,
+      "rag_answer": "The CI pipeline tests against real services, specifically a real Postgres database and a real RabbitMQ instance, rather than mocks [tests/test_producer.py:1-2].",
+      "rag_sources": [
+        "README.md",
+        "consumer/worker.py",
+        "k8s/00-namespace.yaml",
+        "k8s/01-postgres.yaml",
+        "k8s/03-producer.yaml",
+        "tests/test_consumer.py",
+        "tests/test_producer.py"
+      ],
+      "rag_tools_used": [
+        {
+          "tool": "search_keyword",
+          "term": "pipeline",
+          "hit_count": 8
+        }
+      ],
+      "baseline_answer": "Answer: I do not have access to your specific codebase or its configuration, so I cannot tell you whether your CI pipeline uses mocks or real services. You would need to check your repository's CI configuration files (e.g., `.github/workflows/`, `.gitlab-ci.yml`, or `Jenkinsfile`) and look for environment variable settings or infrastructure-as-code definitions to determine how your tests are being executed."
+    },
+    {
+      "id": "q7",
+      "question": "What color is the CEO's car?",
+      "in_scope": false,
+      "rag_answer": "I don't have enough information in the indexed context to answer that.",
+      "rag_sources": [
+        ".github/workflows/ci.yml",
+        "k8s/01-postgres.yaml",
+        "k8s/03-producer.yaml",
+        "k8s/04-consumer.yaml"
+      ],
+      "rag_tools_used": [
+        {
+          "tool": "search_keyword",
+          "term": "color",
+          "hit_count": 0
+        }
+      ],
+      "baseline_answer": "Answer: I do not have access to your codebase, so I cannot answer this question."
+    },
+    {
+      "id": "q8",
+      "question": "What was Sai's GPA in his final year of college?",
+      "in_scope": false,
+      "rag_answer": "I don't have enough information in the indexed context to answer that",
+      "rag_sources": [
+        ".github/workflows/ci.yml",
+        "consumer/worker.py",
+        "tests/conftest.py",
+        "tests/test_consumer.py"
+      ],
+      "rag_tools_used": [
+        {
+          "tool": "search_keyword",
+          "term": "college",
+          "hit_count": 0
+        }
+      ],
+      "baseline_answer": "I do not have access to your codebase, so I do not know who Sai is or what his GPA was."
+    }
+  ]
+}
