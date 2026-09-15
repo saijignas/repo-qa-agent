@@ -1,5 +1,7 @@
 # Repo-QA Agent
 
+![CI](https://github.com/saijignas/repo-qa-agent/actions/workflows/ci.yml/badge.svg)
+
 A retrieval-augmented Q&A agent over a real codebase (indexed here: [Order-Processing-Pipeline](https://github.com/saijignas/Order-Processing-Pipeline)), with retrieval quality actually measured and a disclosed RAG-vs-no-retrieval comparison — not a "built a chatbot" demo.
 
 **Why this exists:** several roles I'm applying to explicitly want "repository indexing, memory, and retrieval systems" and "agent-driven" work — this project is real, tested evidence of that, not a claim.
