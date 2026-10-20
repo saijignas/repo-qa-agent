@@ -59,10 +59,13 @@ def build_graph(
     llm: Callable = None,
     threshold: float = None,
     collection_getter: Callable = None,
+    generator: Callable = None,
 ):
     """Builds and compiles the graph. The collaborators are injectable so tests
     can drive every route without Chroma or a live model; by default they are
-    the same functions agent.py uses."""
+    the same functions agent.py uses. `generator(context, question) -> text`, when
+    given, replaces the default prompt-building-plus-llm step (langchain_agent.py
+    uses it to run the generation step as a LangChain chain)."""
     collection_getter = collection_getter or get_collection
     retriever = retriever or retrieve
     keyword_search = keyword_search or search_keyword
@@ -105,8 +108,11 @@ def build_graph(
 
     def generate_node(state: QAState) -> QAState:
         context = format_hits_for_prompt(state["hits"])
-        prompt = hand_rolled.ANSWER_PROMPT_TEMPLATE.format(context=context, question=state["question"])
-        text = llm(prompt)
+        if generator is not None:
+            text = generator(context, state["question"])
+        else:
+            prompt = hand_rolled.ANSWER_PROMPT_TEMPLATE.format(context=context, question=state["question"])
+            text = llm(prompt)
         return {
             "answer": text.strip(),
             "sources": sorted({h["source"] for h in state["hits"]}),

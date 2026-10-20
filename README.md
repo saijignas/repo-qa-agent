@@ -13,6 +13,7 @@ A retrieval-augmented Q&A agent over a real codebase (indexed here: [Order-Proce
 - **2/2 out-of-scope questions correctly declined**, not hallucinated
 - **17/17 tests pass** against real infrastructure (Chroma + live Gemini calls), 2 of which skip cleanly (not fake-pass) without an API key
 - **LangGraph version of the same policy** (`graph_agent.py`): on all 8 questions, in 2 live runs each, it made the same decisions as the hand-rolled agent (same tools, same sources, same answer-or-decline), at about 3 ms of orchestration overhead; see [LangGraph version](#langgraph-version-graph_agentpy)
+- **LangChain-wrapped version** (`langchain_agent.py`): the same graph with LangChain's Chroma wrapper, prompt template and Gemini chat model swapped in. On the real index it retrieves identical chunks in identical order (precision@5 0.83 for both), and in 2 live runs it made the same decisions on all 8 questions; see [LangChain-wrapped version](#langchain-wrapped-version-langchain_agentpy)
 - **MCP server** (`mcp_server.py`): the repo tools and the agent exposed to Claude Desktop, Claude Code or any MCP client over stdio; file access is restricted to indexed files, every input is bounded, and it is tested both in-process and as a real stdio subprocess; see [MCP server](#mcp-server-mcp_serverpy)
 
 ## Quickstart
@@ -121,6 +122,49 @@ How to read it:
 - **What the framework does buy here:** an explicit, inspectable graph, a diagram generated from the code, a per-question `path` of visited nodes, and a structure that extends naturally (checkpointing, human-in-the-loop interrupts, more tools). **What it costs:** the policy is 36 lines of plain Python in `agent.py` and about 190 lines (83 inside `build_graph`) here. For a five-step policy the hand-rolled version is the simpler choice; the graph earns its keep when the flow grows branches, state or approvals.
 - **Limits.** 8 questions and 2 runs per engine is a small sample. The automated checks verify behaviour (declined or not, citations present and pointing at real files, expected source used); they do not judge whether an answer is *correct*, so read the saved answers for that.
 
+## LangChain-wrapped version (`langchain_agent.py`)
+
+The LangGraph version above changed only the orchestration. This one also swaps the parts for LangChain's own, to ask whether the framework's components behave differently from the hand-written ones.
+
+| part | hand-written | LangChain |
+|---|---|---|
+| vector search | `retrieve.py` (Chroma query) | `langchain_chroma.Chroma.similarity_search_with_score` over the same, already-built collection |
+| embeddings | Chroma's default ONNX MiniLM | a small `Embeddings` adapter around that same Chroma model |
+| prompt | `ANSWER_PROMPT_TEMPLATE.format(...)` | `ChatPromptTemplate` built from the identical template text |
+| generation | `llm_client.call_gemini` (plain `requests`) | `ChatGoogleGenerativeAI` piped into `StrOutputParser` (`prompt \| model \| parser`) |
+| keyword tool | `tools.search_keyword` | the same function wrapped as a LangChain `@tool` |
+
+Unchanged on purpose: the decision policy (the LangGraph graph is reused), the index (opened, never rebuilt), the prompt text and the model (`gemini-3.1-flash-lite`).
+
+Two details that decide whether the comparison is fair:
+- **The embedding adapter is not optional.** A Chroma index only answers correctly in the vector space it was built in. Giving the wrapper a different embedding model would return meaningless distances, so the adapter reuses Chroma's own function. A mutation test that swaps in a wrong embedding makes the retrieval-parity test fail.
+- **Sampling.** The wrapper defaults to `temperature=0.7`, while the hand-written client sends no temperature at all. Left alone, the two engines would differ in something unrelated to the framework, so `make_model()` passes `temperature=None`, which leaves it at the API default; a test asserts it (and that the API key does not appear in the model's `repr`).
+
+```bash
+python langchain_agent.py "How does the consumer avoid double-processing an order?" ../Order-Processing-Pipeline --store ./chroma_store
+python eval/compare_retrieval.py        # retrieval only, no model calls
+```
+
+### Measured
+
+**Retrieval (no model calls, `eval/compare_retrieval.py`, real index and real questions):** identical chunks in identical order on 6 of 6 in-scope questions, largest distance difference 0, and the same precision@5, 5/6 = 0.83, for both. The one miss is the same q6 miss disclosed above.
+
+**End to end (live Gemini, 8 questions, 2 runs, `eval/run_engine_eval.py --engines langchain --merge`):**
+
+| | hand-rolled | LangGraph | LangChain components |
+|---|---|---|---|
+| Automated checks passed (per run, 26 checks) | 25/26, 25/26 | 25/26, 25/26 | 25/26, 25/26 |
+| Failed model calls | 0 | 0 | 0 |
+| Same tools / sources / answer-or-decline as hand-rolled | n/a | 8/8 in both runs, for all three | 8/8 in both runs, for all three |
+| Wording similarity, run 1 vs run 2 of the same engine | 0.76 | 0.75 | 0.66 |
+| Wording similarity vs hand-rolled | n/a | 0.77 | 0.72 |
+
+How to read it:
+- **Behaviour is the same.** The only failing check, in every run of every engine, is the q6 retrieval miss. All three engines took the same actions on every question.
+- **Wording is a little further from the hand-written version (0.72 against 0.77), but that is not a clean finding.** The LangChain engine's own run-to-run similarity was also lower (0.66), so some of the gap is simply that run being noisier, and 8 questions with 2 runs per engine cannot separate "the wrapper changes the wording" from "this was a noisier run". I did not investigate further (for example by comparing the exact request each wrapper sends), so I am not claiming a cause.
+- **Do not read the seconds per question as a speed result.** The raw results show about 26 s, 20 s and 10 s per question for the three engines, but they were measured at different times, the earlier runs hit transient 503 retries, and the model service's latency varies from hour to hour. The comparison is not controlled for that.
+- **What using LangChain's components cost and bought here.** Cost: three more pinned packages and a longer install. Benefit: nothing measurable in this evaluation. The honest conclusion for a retriever, prompt and model this simple is that the wrappers are interchangeable with the hand-written parts, which is useful to know and not a reason to prefer either.
+
 ## MCP server (`mcp_server.py`)
 
 An [MCP](https://modelcontextprotocol.io) (Model Context Protocol) server, so an AI client such as Claude Desktop or Claude Code can use this project's tools directly. Built on the official Python SDK (`mcp` 2.x, `MCPServer`).
@@ -179,7 +223,7 @@ pip install -r requirements.txt
 python -m pytest tests/ -v
 ```
 
-82 tests: all pass with `GEMINI_API_KEY` set, and 80 pass plus 2 skip cleanly (rather than fake-passing) when the key is absent. The 2 skipped call live Gemini: citation correctness and decline-on-irrelevant-context. The LangGraph tests (`tests/test_graph_agent.py`) use stubs, drive every route through the graph, and check that it makes the same decisions as the hand-rolled agent, including the case where the best distance equals the threshold exactly. The MCP tests are described above.
+91 tests: all pass with `GEMINI_API_KEY` set, and 89 pass plus 2 skip cleanly (rather than fake-passing) when the key is absent. The 2 skipped call live Gemini: citation correctness and decline-on-irrelevant-context. The LangGraph tests (`tests/test_graph_agent.py`) use stubs, drive every route through the graph, and check that it makes the same decisions as the hand-rolled agent, including the case where the best distance equals the threshold exactly. The LangChain tests (`tests/test_langchain_agent.py`) use a recording fake model and real Chroma, and check retrieval parity, that the prompt text sent is the hand-written template's, and that the graph decides like the hand-written agent. The MCP tests are described above.
 
 ## Setup
 
@@ -207,6 +251,6 @@ Two bugs found while building the LangGraph version, both fixed with tests:
 
 ## Possible extensions
 
-- **More framework adapters:** the LangGraph version above shows the policy survives being moved into a framework unchanged. A LlamaIndex or LangChain-retriever version would be the next comparison; it would change retrieval and prompting as well as orchestration, so it would need its own, more careful evaluation.
+- **More framework comparisons:** a LlamaIndex version would be the next one. A larger evaluation set (dozens of real questions rather than 8), more runs per engine, and a controlled latency measurement would be needed before drawing any speed or wording conclusion.
 - **Hybrid retrieval** (lexical + semantic) to fix the exact gap the q6 spotlight surfaced, rather than relying on the keyword-search fallback to catch it after the fact.
 - **Syntax-aware chunking** (function/class boundaries via an AST parse) instead of fixed-size windows.

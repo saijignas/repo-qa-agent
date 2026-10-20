@@ -1,14 +1,18 @@
-"""Summarises eval/engine_results.json (written by run_engine_eval.py) as markdown.
+"""Summarises eval/engine_results.json (written by run_engine_eval.py) as markdown,
+for any number of engines (the first one listed in the file is the baseline).
 
-Three views:
+Four views:
 1. Automated checks passed per engine and run.
-2. Decisions: does the graph take the same actions as the hand-rolled agent
-   (tools used, sources used, decline or answer) on every question?
+2. Decisions: does each engine take the same actions as the baseline (tools used,
+   sources used, decline or answer) on every question?
 3. Wording noise: how similar are two answers to the same question? Compared
    within one engine (run 1 vs run 2, which is pure sampling noise) and between
-   engines (hand-rolled vs graph). If the between-engine similarity is no lower
-   than the within-engine similarity, the engines are indistinguishable at this
-   resolution.
+   engines. If the between-engine similarity is no lower than the within-engine
+   similarity, the engines are indistinguishable at this resolution.
+4. Mean seconds per question (dominated by the model call, not the engine).
+
+The checks are recomputed from the stored answers, so a fix to the check logic
+applies to results that were already collected.
 """
 import argparse
 import difflib
@@ -37,12 +41,20 @@ def passed(rows):
     return ok, total
 
 
+def decision(row):
+    c = row["checks"]
+    return c["declined"] if "declined" in c else not c["not_declined"]
+
+
+def mean_sim(rows_x, rows_y):
+    vals = [similarity(x["answer"], y["answer"]) for x, y in zip(rows_x, rows_y) if "error" not in x and "error" not in y]
+    return (sum(vals) / len(vals) if vals else float("nan")), len(vals)
+
+
 def main(path, repo_root):
     data = json.loads(Path(path).read_text())
     engines = data["engines"]
     names = list(engines)
-    # Recompute the checks from the stored answers so a fix to the check logic
-    # applies to results that were already collected.
     questions = {q["id"]: q for q in json.loads((Path(__file__).parent / "questions.json").read_text())}
     for rows_by_run in engines.values():
         for rows in rows_by_run:
@@ -58,21 +70,17 @@ def main(path, repo_root):
             ok, total = passed(rows)
             print(f"| {n} | {i} | {ok}/{total} | {sum('error' in r for r in rows)} |")
 
-    a, b = names[0], names[1]
-    print(f"\n### Decisions: {a} vs {b} (run-by-run, same question)\n")
-    print("| run | questions compared | same tools used | same sources | same decline/answer decision |")
-    print("|---|---|---|---|---|")
-    for i, (ra, rb) in enumerate(zip(engines[a], engines[b]), 1):
-        pairs = [(x, y) for x, y in zip(ra, rb) if "error" not in x and "error" not in y]
-        same_tools = sum(x["tools_used"] == y["tools_used"] for x, y in pairs)
-        same_src = sum(x["sources"] == y["sources"] for x, y in pairs)
-        same_dec = sum(x["checks"].get("declined", not x["checks"].get("not_declined"))
-                       == y["checks"].get("declined", not y["checks"].get("not_declined")) for x, y in pairs)
-        print(f"| {i} | {len(pairs)} | {same_tools}/{len(pairs)} | {same_src}/{len(pairs)} | {same_dec}/{len(pairs)} |")
-
-    def mean_sim(rows_x, rows_y):
-        vals = [similarity(x["answer"], y["answer"]) for x, y in zip(rows_x, rows_y) if "error" not in x and "error" not in y]
-        return sum(vals) / len(vals) if vals else float("nan"), len(vals)
+    base = names[0]
+    for other in names[1:]:
+        print(f"\n### Decisions: {other} vs {base} (run by run, same question)\n")
+        print("| run | questions compared | same tools used | same sources | same decline/answer decision |")
+        print("|---|---|---|---|---|")
+        for i, (rb, ro) in enumerate(zip(engines[base], engines[other]), 1):
+            pairs = [(x, y) for x, y in zip(rb, ro) if "error" not in x and "error" not in y]
+            same_tools = sum(x["tools_used"] == y["tools_used"] for x, y in pairs)
+            same_src = sum(x["sources"] == y["sources"] for x, y in pairs)
+            same_dec = sum(decision(x) == decision(y) for x, y in pairs)
+            print(f"| {i} | {len(pairs)} | {same_tools}/{len(pairs)} | {same_src}/{len(pairs)} | {same_dec}/{len(pairs)} |")
 
     print("\n### Wording similarity (0 to 1; higher means closer text)\n")
     print("| comparison | mean similarity | answer pairs |")
@@ -81,16 +89,15 @@ def main(path, repo_root):
         if len(engines[n]) >= 2:
             m, c = mean_sim(engines[n][0], engines[n][1])
             print(f"| {n} run 1 vs run 2 (sampling noise) | {m:.2f} | {c} |")
-    cross = []
-    for ra, rb in product(engines[a], engines[b]):
-        m, c = mean_sim(ra, rb)
-        cross.append(m)
-    print(f"| {a} vs {b} (all run pairs) | {sum(cross)/len(cross):.2f} | {len(cross)} run pairs |")
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            sims = [mean_sim(ra, rb)[0] for ra, rb in product(engines[a], engines[b])]
+            print(f"| {a} vs {b} (all run pairs) | {sum(sims) / len(sims):.2f} | {len(sims)} run pairs |")
 
-    secs = {n: [r["seconds"] for rows in engines[n] for r in rows if "error" not in r] for n in names}
     print("\n### Mean seconds per question (dominated by the model call)\n")
     for n in names:
-        print(f"- {n}: {sum(secs[n]) / len(secs[n]):.2f}")
+        secs = [r["seconds"] for rows in engines[n] for r in rows if "error" not in r]
+        print(f"- {n}: {sum(secs) / len(secs):.2f}")
 
 
 if __name__ == "__main__":

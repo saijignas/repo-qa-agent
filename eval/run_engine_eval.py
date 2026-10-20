@@ -40,10 +40,20 @@ QUESTIONS_PATH = Path(__file__).parent / "questions.json"
 CITATION_RE = re.compile(r"([A-Za-z0-9_./\-]+\.[A-Za-z0-9]+):\d+(?:-\d+)?")
 DECLINE_MARKERS = ("don't have enough information", "do not have enough information", "cannot answer", "can't answer")
 
-ENGINES = {
-    "handrolled": hand_rolled.answer,
-    "langgraph": graph_agent.answer,
-}
+ENGINE_NAMES = ["handrolled", "langgraph", "langchain"]
+
+
+def get_engine(name):
+    """Imported lazily so running one engine does not require another's dependencies."""
+    if name == "handrolled":
+        return hand_rolled.answer
+    if name == "langgraph":
+        return graph_agent.answer
+    if name == "langchain":
+        import langchain_agent
+
+        return langchain_agent.answer
+    raise SystemExit(f"unknown engine {name!r}; choose from {ENGINE_NAMES}")
 
 
 def is_decline(text):
@@ -65,7 +75,7 @@ def check(question, result, repo_root):
 
 
 def run(engine_name, questions, repo_root, store_dir, collection, pace):
-    fn = ENGINES[engine_name]
+    fn = get_engine(engine_name)
     rows = []
     for i, q in enumerate(questions):
         if i:
@@ -101,6 +111,8 @@ if __name__ == "__main__":
     parser.add_argument("--runs", type=int, default=2)
     parser.add_argument("--pace", type=float, default=3.0, help="seconds between model calls")
     parser.add_argument("--out", default=str(Path(__file__).parent / "engine_results.json"))
+    parser.add_argument("--engines", default="handrolled,langgraph", help=f"comma-separated, from {ENGINE_NAMES}")
+    parser.add_argument("--merge", action="store_true", help="keep engines already in --out and add or replace only the ones run now")
     args = parser.parse_args()
 
     questions = json.loads(QUESTIONS_PATH.read_text())
@@ -108,7 +120,10 @@ if __name__ == "__main__":
     store_dir = Path(args.store).resolve()
 
     output = {"runs": args.runs, "engines": {}}
-    for engine in ENGINES:
+    if args.merge and Path(args.out).exists():
+        output = json.loads(Path(args.out).read_text())
+        output["runs"] = args.runs
+    for engine in [e.strip() for e in args.engines.split(",") if e.strip()]:
         output["engines"][engine] = []
         for r in range(args.runs):
             print(f"{engine}, run {r + 1}/{args.runs}", flush=True)
