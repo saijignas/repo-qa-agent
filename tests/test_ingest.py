@@ -53,3 +53,31 @@ def test_build_index_indexes_expected_file_count(tmp_path):
 
     sources = {m["source"] for m in collection.get()["metadatas"]}
     assert sources == {"app.py", "README.md"}
+
+
+def test_find_source_files_skips_virtualenvs_and_dependency_folders(tmp_path):
+    from ingest import find_source_files
+
+    def touch(rel):
+        f = tmp_path / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x = 1\n", encoding="utf-8")
+
+    touch("app/main.py")
+    touch("README.md")
+    touch(".venv/Lib/site-packages/pkg/mod.py")
+    touch("node_modules/lib/index.md")
+    touch("__pycache__/m.py")
+    touch(".git/hooks/h.py")
+
+    found = sorted(p.relative_to(tmp_path).as_posix() for p in find_source_files(tmp_path))
+    assert found == ["README.md", "app/main.py"]
+
+
+def test_find_source_files_does_not_skip_a_repo_that_lives_under_a_build_folder(tmp_path):
+    from ingest import find_source_files
+
+    repo = tmp_path / "build" / "myrepo"
+    repo.mkdir(parents=True)
+    (repo / "a.py").write_text("x = 1\n", encoding="utf-8")
+    assert [p.name for p in find_source_files(repo)] == ["a.py"]

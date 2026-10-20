@@ -19,13 +19,25 @@ CHUNK_LINES = 40
 OVERLAP_LINES = 6
 
 
+# Directories that never hold the repo's own source. Found the hard way: pointing
+# the indexer at a working copy that had a .venv inside it tried to embed every
+# file of every installed package and ran for 14 minutes without finishing.
+IGNORED_DIRS = {
+    "__pycache__", ".git", ".venv", "venv", "env", "node_modules", "site-packages",
+    ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache", "build", "dist",
+}
+
+
 def find_source_files(repo_root):
+    repo_root = Path(repo_root)
     for path in sorted(repo_root.rglob("*")):
         if not path.is_file():
             continue
         if path.suffix not in INDEXABLE_EXTENSIONS:
             continue
-        if "__pycache__" in path.parts or ".git" in path.parts:
+        # judge only the parts below repo_root, so a repo that happens to live
+        # under a folder called "build" is still indexed
+        if IGNORED_DIRS & set(path.relative_to(repo_root).parts):
             continue
         yield path
 

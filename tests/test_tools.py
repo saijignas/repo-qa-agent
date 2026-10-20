@@ -49,3 +49,11 @@ def test_fetch_file_refuses_path_traversal_outside_repo_root(tmp_path):
     _write(tmp_path / "secret.py", "top secret")
     with pytest.raises(ValueError):
         fetch_file(tmp_path / "repo", "../secret.py")
+
+
+def test_search_keyword_ignores_virtualenvs_and_dependency_folders(tmp_path):
+    _write(tmp_path / "app" / "main.py", "pipeline = 1\n")
+    _write(tmp_path / ".venv" / "Lib" / "site-packages" / "pip" / "misc.py", "pipeline = 2\n")
+    _write(tmp_path / "node_modules" / "lib" / "index.md", "pipeline docs\n")
+    hits = search_keyword(tmp_path, "pipeline")
+    assert [h["source"] for h in hits] == ["app/main.py"]

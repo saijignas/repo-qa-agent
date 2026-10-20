@@ -1,0 +1,817 @@
+{
+  "runs": 2,
+  "engines": {
+    "handrolled": [
+      [
+        {
+          "id": "q1",
+          "in_scope": true,
+          "answer": "The consumer avoids double-processing redelivered messages by checking the order's current status in Postgres before performing any work [consumer/worker.py:3-7]. If the order status is already `completed`, the handler returns immediately with no side effects [consumer/worker.py:4-5, README.md:43-44]. This approach ensures that even if a consumer commits a database update but crashes before acknowledging the message, the subsequent redelivery of the message does not result in reprocessing [consumer/worker.py:6-9, README.md:44-48].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "producer/app.py",
+            "shared/rabbitmq.py"
+          ],
+          "tools_used": [],
+          "path": null,
+          "seconds": 7.32,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q2",
+          "in_scope": true,
+          "answer": "After an order exhausts its retry budget (3 failed attempts), it is routed to the `orders.dlq` and the order is marked as `failed` [README.md:35-74, consumer/worker.py:1-40]. Once in the DLQ, the order does not auto-retry; a human or a separate reprocessing tool must address it [README.md:35-74, shared/rabbitmq.py:1-40].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "shared/rabbitmq.py"
+          ],
+          "tools_used": [],
+          "path": null,
+          "seconds": 22.16,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q3",
+          "in_scope": true,
+          "answer": "MAX_RETRIES is set to 3 [shared/rabbitmq.py:28]. It is defined in the file `shared/rabbitmq.py` [shared/rabbitmq.py:28].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "shared/rabbitmq.py",
+            "tests/test_consumer.py"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "MAX_RETRIES",
+              "hit_count": 8
+            }
+          ],
+          "path": null,
+          "seconds": 28.37,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q4",
+          "in_scope": true,
+          "answer": "The producer prevents duplicate orders by using an `Idempotency-Key` header provided by the client. When a `POST /orders` request is received, the producer checks if an order with that specific `Idempotency-Key` already exists in Postgres. If an existing order is found, the producer returns that existing order instead of creating a new one [producer/app.py:46-52].",
+          "sources": [
+            "README.md",
+            "producer/app.py",
+            "tests/test_consumer.py"
+          ],
+          "tools_used": [],
+          "path": null,
+          "seconds": 23.53,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q5",
+          "in_scope": true,
+          "answer": "The consumer Kubernetes deployment runs 1 replica [k8s/04-consumer.yaml:13]. This is because the deployment is running on a single free-tier VM that has 1GB of RAM total, making it a resource-constrained environment where the number of replicas is limited by hardware capacity [k8s/04-consumer.yaml:4-5, k8s/03-producer.yaml:3-6].",
+          "sources": [
+            "README.md",
+            "k8s/01-postgres.yaml",
+            "k8s/02-rabbitmq.yaml",
+            "k8s/03-producer.yaml",
+            "k8s/04-consumer.yaml"
+          ],
+          "tools_used": [],
+          "path": null,
+          "seconds": 13.3,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q6",
+          "in_scope": true,
+          "answer": "The CI pipeline tests against real services, specifically real Postgres and real RabbitMQ instances, rather than mocks [tests/test_producer.py:1-2].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "k8s/00-namespace.yaml",
+            "k8s/01-postgres.yaml",
+            "k8s/02-rabbitmq.yaml",
+            "k8s/03-producer.yaml",
+            "tests/test_consumer.py",
+            "tests/test_producer.py"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "pipeline",
+              "hit_count": 8
+            }
+          ],
+          "path": null,
+          "seconds": 23.32,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": false
+          }
+        },
+        {
+          "id": "q7",
+          "in_scope": false,
+          "answer": "I don't have enough information in the indexed context to answer that",
+          "sources": [
+            ".github/workflows/ci.yml",
+            "k8s/01-postgres.yaml",
+            "k8s/03-producer.yaml",
+            "k8s/04-consumer.yaml"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "color",
+              "hit_count": 0
+            }
+          ],
+          "path": null,
+          "seconds": 16.82,
+          "checks": {
+            "declined": true
+          }
+        },
+        {
+          "id": "q8",
+          "in_scope": false,
+          "answer": "I don't have enough information in the indexed context to answer that.",
+          "sources": [
+            ".github/workflows/ci.yml",
+            "shared/models.py",
+            "shared/rabbitmq.py",
+            "tests/conftest.py",
+            "tests/test_consumer.py"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "college",
+              "hit_count": 0
+            }
+          ],
+          "path": null,
+          "seconds": 71.96,
+          "checks": {
+            "declined": true
+          }
+        }
+      ],
+      [
+        {
+          "id": "q1",
+          "in_scope": true,
+          "answer": "The consumer avoids double-processing redelivered messages by implementing an idempotent design where it checks the order's current status in Postgres before performing any work [consumer/worker.py:4-7, README.md:42-45]. If the status is already `completed`, the handler returns immediately with no side effects, preventing issues such as double-charging or double-shipping that could otherwise occur due to the at-least-once delivery nature of the system [consumer/worker.py:4-10, README.md:42-46].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "producer/app.py",
+            "shared/rabbitmq.py"
+          ],
+          "tools_used": [],
+          "path": null,
+          "seconds": 50.37,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q2",
+          "in_scope": true,
+          "answer": "After exhausting its retry budget (which is set at `MAX_RETRIES` of 3), the order is sent to `orders.dlq` and marked as `failed` [README.md:35-74, shared/rabbitmq.py:1-40, consumer/worker.py:1-40]. There is no automatic retry mechanism out of the DLQ; a human must manually inspect it [README.md:35-74, shared/rabbitmq.py:1-40].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "shared/rabbitmq.py"
+          ],
+          "tools_used": [],
+          "path": null,
+          "seconds": 10.02,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q3",
+          "in_scope": true,
+          "answer": "MAX_RETRIES is set to 3 [shared/rabbitmq.py:28]. It is defined in the file `shared/rabbitmq.py` [shared/rabbitmq.py:28].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "shared/rabbitmq.py",
+            "tests/test_consumer.py"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "MAX_RETRIES",
+              "hit_count": 8
+            }
+          ],
+          "path": null,
+          "seconds": 15.97,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q4",
+          "in_scope": true,
+          "answer": "The producer prevents duplicate orders by utilizing an `Idempotency-Key` header provided by the client [producer/app.py:43-44]. \n\nWhen a `POST /orders` request includes an `idempotency_key`, the producer queries the Postgres database for an existing order with that same key [producer/app.py:43-45]. If an existing order is found, the producer returns that order instead of creating a new one [producer/app.py:46-50]. If no such order exists, it proceeds to create a new record [producer/app.py:53-59].",
+          "sources": [
+            "README.md",
+            "producer/app.py",
+            "tests/test_consumer.py"
+          ],
+          "tools_used": [],
+          "path": null,
+          "seconds": 15.5,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q5",
+          "in_scope": true,
+          "answer": "The Kubernetes deployment for the consumer runs 1 replica [k8s/04-consumer.yaml:12]. This is because the single free-tier VM hosting the project has 1GB of RAM total, making this a resource-constrained tradeoff [k8s/04-consumer.yaml:4-5].",
+          "sources": [
+            "README.md",
+            "k8s/01-postgres.yaml",
+            "k8s/02-rabbitmq.yaml",
+            "k8s/03-producer.yaml",
+            "k8s/04-consumer.yaml"
+          ],
+          "tools_used": [],
+          "path": null,
+          "seconds": 9.27,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q6",
+          "in_scope": true,
+          "answer": "The CI pipeline tests against real services, specifically using a real Postgres database and a real RabbitMQ instance rather than mocks [tests/test_producer.py:1-2].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "k8s/00-namespace.yaml",
+            "k8s/01-postgres.yaml",
+            "k8s/02-rabbitmq.yaml",
+            "k8s/03-producer.yaml",
+            "tests/test_consumer.py",
+            "tests/test_producer.py"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "pipeline",
+              "hit_count": 8
+            }
+          ],
+          "path": null,
+          "seconds": 70.92,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": false
+          }
+        },
+        {
+          "id": "q7",
+          "in_scope": false,
+          "answer": "I don't have enough information in the indexed context to answer that",
+          "sources": [
+            ".github/workflows/ci.yml",
+            "k8s/01-postgres.yaml",
+            "k8s/03-producer.yaml",
+            "k8s/04-consumer.yaml"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "color",
+              "hit_count": 0
+            }
+          ],
+          "path": null,
+          "seconds": 18.68,
+          "checks": {
+            "declined": true
+          }
+        },
+        {
+          "id": "q8",
+          "in_scope": false,
+          "answer": "I don't have enough information in the indexed context to answer that",
+          "sources": [
+            ".github/workflows/ci.yml",
+            "shared/models.py",
+            "shared/rabbitmq.py",
+            "tests/conftest.py",
+            "tests/test_consumer.py"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "college",
+              "hit_count": 0
+            }
+          ],
+          "path": null,
+          "seconds": 20.44,
+          "checks": {
+            "declined": true
+          }
+        }
+      ]
+    ],
+    "langgraph": [
+      [
+        {
+          "id": "q1",
+          "in_scope": true,
+          "answer": "The consumer avoids double-processing redelivered messages by implementing idempotency: before performing any work, it checks the current status of the order in Postgres [consumer/worker.py:4-7]. If the order status is already `completed`, the handler returns immediately with no side effects, preventing issues like double-charging or double-shipping [README.md:42-47; consumer/worker.py:4-11].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "producer/app.py",
+            "shared/rabbitmq.py"
+          ],
+          "tools_used": [],
+          "path": [
+            "retrieve",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 16.83,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q2",
+          "in_scope": true,
+          "answer": "After an order exhausts its retry budget (3 failed attempts), it is routed to the `orders.dlq` queue and the order is marked as `failed` [README.md:35-74, consumer/worker.py:1-40]. Once in the DLQ, the order does not automatically retry; a human must examine it [README.md:35-74, shared/rabbitmq.py:1-40].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "shared/rabbitmq.py"
+          ],
+          "tools_used": [],
+          "path": [
+            "retrieve",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 6.65,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q3",
+          "in_scope": true,
+          "answer": "MAX_RETRIES is set to 3 [shared/rabbitmq.py:28]. It is defined in the file `shared/rabbitmq.py` [shared/rabbitmq.py:28].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "shared/rabbitmq.py",
+            "tests/test_consumer.py"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "MAX_RETRIES",
+              "hit_count": 8
+            }
+          ],
+          "path": [
+            "retrieve",
+            "keyword_search",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 10.39,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q4",
+          "in_scope": true,
+          "answer": "The producer prevents creating a duplicate order by using the `Idempotency-Key` header provided by the client. When a request is received, the producer queries the Postgres database for an existing order with the same `idempotency_key` [producer/app.py:44-46]. If such an order is found, the producer returns the existing order instead of creating a new one [producer/app.py:47-50].",
+          "sources": [
+            "README.md",
+            "producer/app.py",
+            "tests/test_consumer.py"
+          ],
+          "tools_used": [],
+          "path": [
+            "retrieve",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 9.33,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q5",
+          "in_scope": true,
+          "answer": "The Kubernetes deployment for the consumer runs 1 replica [k8s/04-consumer.yaml:12]. This is because the pipeline is running on a single free-tier VM with 1GB of total RAM, which necessitates resource-constrained tradeoffs [k8s/04-consumer.yaml:4-5, k8s/03-producer.yaml:3-6].",
+          "sources": [
+            "README.md",
+            "k8s/01-postgres.yaml",
+            "k8s/02-rabbitmq.yaml",
+            "k8s/03-producer.yaml",
+            "k8s/04-consumer.yaml"
+          ],
+          "tools_used": [],
+          "path": [
+            "retrieve",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 15.85,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q6",
+          "in_scope": true,
+          "answer": "The CI pipeline tests against real Postgres and RabbitMQ services, not mocks [tests/test_producer.py:1-2].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "k8s/00-namespace.yaml",
+            "k8s/01-postgres.yaml",
+            "k8s/02-rabbitmq.yaml",
+            "k8s/03-producer.yaml",
+            "tests/test_consumer.py",
+            "tests/test_producer.py"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "pipeline",
+              "hit_count": 8
+            }
+          ],
+          "path": [
+            "retrieve",
+            "keyword_search",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 9.08,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": false
+          }
+        },
+        {
+          "id": "q7",
+          "in_scope": false,
+          "answer": "I don't have enough information in the indexed context to answer that",
+          "sources": [
+            ".github/workflows/ci.yml",
+            "k8s/01-postgres.yaml",
+            "k8s/03-producer.yaml",
+            "k8s/04-consumer.yaml"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "color",
+              "hit_count": 0
+            }
+          ],
+          "path": [
+            "retrieve",
+            "keyword_search",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 9.33,
+          "checks": {
+            "declined": true
+          }
+        },
+        {
+          "id": "q8",
+          "in_scope": false,
+          "answer": "I don't have enough information in the indexed context to answer that",
+          "sources": [
+            ".github/workflows/ci.yml",
+            "shared/models.py",
+            "shared/rabbitmq.py",
+            "tests/conftest.py",
+            "tests/test_consumer.py"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "college",
+              "hit_count": 0
+            }
+          ],
+          "path": [
+            "retrieve",
+            "keyword_search",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 18.77,
+          "checks": {
+            "declined": true
+          }
+        }
+      ],
+      [
+        {
+          "id": "q1",
+          "in_scope": true,
+          "answer": "The consumer avoids double-processing redelivered messages by checking the order's current status in Postgres before performing any work [consumer/worker.py:3-5, README.md:42-44]. If the status is already `completed`, the consumer returns immediately with no side effects [consumer/worker.py:4-5, README.md:43-44]. This check is necessary because message delivery is at-least-once, meaning a consumer might commit a database update but crash before acknowledging the message, leading RabbitMQ to redeliver it [consumer/worker.py:5-8, README.md:44-47].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "producer/app.py",
+            "shared/rabbitmq.py"
+          ],
+          "tools_used": [],
+          "path": [
+            "retrieve",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 16.15,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q2",
+          "in_scope": true,
+          "answer": "After exhausting the retry budget (which is defined as `MAX_RETRIES` or 3 attempts), the message is sent to the `orders.dlq` (dead-letter queue) and the order is marked as `failed` [README.md:35-74, shared/rabbitmq.py:1-40, consumer/worker.py:1-40]. Nothing automatically retries out of the DLQ, requiring human intervention [README.md:35-74, shared/rabbitmq.py:1-40].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "shared/rabbitmq.py"
+          ],
+          "tools_used": [],
+          "path": [
+            "retrieve",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 47.3,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q3",
+          "in_scope": true,
+          "answer": "MAX_RETRIES is set to 3. It is defined in `shared/rabbitmq.py` [shared/rabbitmq.py:28-28].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "shared/rabbitmq.py",
+            "tests/test_consumer.py"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "MAX_RETRIES",
+              "hit_count": 8
+            }
+          ],
+          "path": [
+            "retrieve",
+            "keyword_search",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 38.96,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q4",
+          "in_scope": true,
+          "answer": "The producer prevents duplicate orders by utilizing an `Idempotency-Key` header provided by the client. When a `POST /orders` request is received, the producer checks if an order with the provided `idempotency_key` already exists in the Postgres database [producer/app.py:44-46]. If a record is found, the producer returns the existing order instead of creating a new one [producer/app.py:47-50].",
+          "sources": [
+            "README.md",
+            "producer/app.py",
+            "tests/test_consumer.py"
+          ],
+          "tools_used": [],
+          "path": [
+            "retrieve",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 12.88,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q5",
+          "in_scope": true,
+          "answer": "The Kubernetes deployment for the consumer runs 1 replica [k8s/04-consumer.yaml:12]. This is because the system is running on a single free-tier VM with only 1GB of total RAM, making it a resource-constrained environment [k8s/04-consumer.yaml:4-5].",
+          "sources": [
+            "README.md",
+            "k8s/01-postgres.yaml",
+            "k8s/02-rabbitmq.yaml",
+            "k8s/03-producer.yaml",
+            "k8s/04-consumer.yaml"
+          ],
+          "tools_used": [],
+          "path": [
+            "retrieve",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 10.5,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": true
+          }
+        },
+        {
+          "id": "q6",
+          "in_scope": true,
+          "answer": "The CI pipeline tests against real services, specifically real Postgres and real RabbitMQ instances, rather than mocks [tests/test_producer.py:1-2].",
+          "sources": [
+            "README.md",
+            "consumer/worker.py",
+            "k8s/00-namespace.yaml",
+            "k8s/01-postgres.yaml",
+            "k8s/02-rabbitmq.yaml",
+            "k8s/03-producer.yaml",
+            "tests/test_consumer.py",
+            "tests/test_producer.py"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "pipeline",
+              "hit_count": 8
+            }
+          ],
+          "path": [
+            "retrieve",
+            "keyword_search",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 12.85,
+          "checks": {
+            "not_declined": true,
+            "has_citation": true,
+            "citations_exist": true,
+            "hit_expected_source": false
+          }
+        },
+        {
+          "id": "q7",
+          "in_scope": false,
+          "answer": "I don't have enough information in the indexed context to answer that.",
+          "sources": [
+            ".github/workflows/ci.yml",
+            "k8s/01-postgres.yaml",
+            "k8s/03-producer.yaml",
+            "k8s/04-consumer.yaml"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "color",
+              "hit_count": 0
+            }
+          ],
+          "path": [
+            "retrieve",
+            "keyword_search",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 74.58,
+          "checks": {
+            "declined": true
+          }
+        },
+        {
+          "id": "q8",
+          "in_scope": false,
+          "answer": "I don't have enough information in the indexed context to answer that.",
+          "sources": [
+            ".github/workflows/ci.yml",
+            "shared/models.py",
+            "shared/rabbitmq.py",
+            "tests/conftest.py",
+            "tests/test_consumer.py"
+          ],
+          "tools_used": [
+            {
+              "tool": "search_keyword",
+              "term": "college",
+              "hit_count": 0
+            }
+          ],
+          "path": [
+            "retrieve",
+            "keyword_search",
+            "check_context",
+            "generate"
+          ],
+          "seconds": 10.07,
+          "checks": {
+            "declined": true
+          }
+        }
+      ]
+    ]
+  }
+}

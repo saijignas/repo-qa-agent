@@ -12,6 +12,7 @@ A retrieval-augmented Q&A agent over a real codebase (indexed here: [Order-Proce
 - **6/6 in-scope questions answered correctly with real `[file:line]` citations**, including one saved by the tool fallback after retrieval alone missed
 - **2/2 out-of-scope questions correctly declined**, not hallucinated
 - **17/17 tests pass** against real infrastructure (Chroma + live Gemini calls), 2 of which skip cleanly (not fake-pass) without an API key
+- **LangGraph version of the same policy** (`graph_agent.py`): on all 8 questions, in 2 live runs each, it made the same decisions as the hand-rolled agent (same tools, same sources, same answer-or-decline), at about 3 ms of orchestration overhead; see [LangGraph version](#langgraph-version-graph_agentpy)
 
 ## Quickstart
 
@@ -74,6 +75,51 @@ Reproduce with:
 python eval/run_eval.py ../Order-Processing-Pipeline --store ./chroma_store
 ```
 
+## LangGraph version (`graph_agent.py`)
+
+The same decision policy as `agent.py`, re-expressed as a [LangGraph](https://github.com/langchain-ai/langgraph) state graph, so the two orchestration styles can be compared on identical questions instead of argued about.
+
+```mermaid
+graph TD;
+    __start__([start]) --> retrieve(retrieve)
+    retrieve -.->|weak or empty| keyword_search(keyword_search)
+    retrieve -.->|confident| check_context(check_context)
+    keyword_search --> check_context
+    check_context -.->|hits| generate(generate)
+    check_context -.->|no hits| decline(decline)
+    generate --> __end__([end])
+    decline --> __end__
+```
+
+(Hand-simplified from the Mermaid that `python graph_agent.py --mermaid` prints from the compiled graph, which is the version that cannot drift from the code.)
+
+**What is framework code and what is not.** LangGraph owns only the orchestration: the state, the five nodes, the conditional edges and the invocation. Retrieval, the keyword tool, the prompt and the Gemini call are the exact functions `agent.py` uses, and no LangChain LLM or vector-store wrappers are involved. That is deliberate: it means any difference in the evaluation comes from orchestration and not from a different retriever or prompt. Every collaborator is injectable, so each route can be tested without Chroma or a live model.
+
+```bash
+python graph_agent.py "How does the consumer avoid double-processing an order?" ../Order-Processing-Pipeline --store ./chroma_store
+```
+
+### Hand-rolled vs LangGraph: measured
+
+`eval/run_engine_eval.py` runs every evaluation question through both engines, twice each (32 live Gemini calls), and `eval/compare_engines.py` summarises the result (raw answers are in `eval/engine_results.json`).
+
+| | hand-rolled | LangGraph |
+|---|---|---|
+| Automated checks passed (per run, 26 checks) | 25/26 and 25/26 | 25/26 and 25/26 |
+| Failed model calls | 0 | 0 |
+| Same tools used as the other engine | 8/8 and 8/8 | 8/8 and 8/8 |
+| Same sources used as the other engine | 8/8 and 8/8 | 8/8 and 8/8 |
+| Same answer-or-decline decision | 8/8 and 8/8 | 8/8 and 8/8 |
+| Answer wording similarity, run 1 vs run 2 (same engine) | 0.76 | 0.75 |
+| Answer wording similarity, hand-rolled vs LangGraph | 0.77 | |
+| Orchestration overhead (model and retrieval stubbed, median of 300 calls) | 0.008 ms | 2.9 ms |
+
+How to read it:
+- **No measurable difference in behaviour.** The one check that fails in every run, for both engines, is the same retrieval miss disclosed above (q6: `ci.yml` is not retrieved, so the expected source is never used; the answer is correct only because the keyword fallback finds a different file). Between-engine wording similarity (0.77) is no lower than the similarity between two runs of the same engine (0.76 and 0.75), so the engines cannot be told apart at this resolution.
+- **The cost is small but real.** About 3 ms per question against several seconds to tens of seconds for a Gemini call (`eval/orchestration_overhead.py`; machine-specific, run it yourself). The mean seconds per question in the raw results (about 26 against 20) reflect model and service latency varying between runs, not an engine property.
+- **What the framework does buy here:** an explicit, inspectable graph, a diagram generated from the code, a per-question `path` of visited nodes, and a structure that extends naturally (checkpointing, human-in-the-loop interrupts, more tools). **What it costs:** the policy is 36 lines of plain Python in `agent.py` and about 190 lines (83 inside `build_graph`) here. For a five-step policy the hand-rolled version is the simpler choice; the graph earns its keep when the flow grows branches, state or approvals.
+- **Limits.** 8 questions and 2 runs per engine is a small sample. The automated checks verify behaviour (declined or not, citations present and pointing at real files, expected source used); they do not judge whether an answer is *correct*, so read the saved answers for that.
+
 ## Tests
 
 ```bash
@@ -81,7 +127,7 @@ pip install -r requirements.txt
 python -m pytest tests/ -v
 ```
 
-17/17 pass with `GEMINI_API_KEY` set; 15 of those need no external API at all, and the other 2 (citation-correctness, decline-on-irrelevant-context) skip cleanly rather than fake-passing when the key isn't set.
+49 tests: all pass with `GEMINI_API_KEY` set, and 47 pass plus 2 skip cleanly (rather than fake-passing) when the key is absent. The 2 skipped call live Gemini: citation correctness and decline-on-irrelevant-context. The LangGraph tests (`tests/test_graph_agent.py`) use stubs, drive every route through the graph, and check that it makes the same decisions as the hand-rolled agent, including the case where the best distance equals the threshold exactly.
 
 ## Setup
 
@@ -96,6 +142,11 @@ python agent.py "your question here" /path/to/target/repo
 
 The first real eval run hit a 429 (rate limited) partway through — the free Gemini tier caps requests-per-minute, not just per-day. Fixed with exponential backoff honoring the API's own `Retry-After` header, plus proactive pacing between eval questions (`llm_client.py`, `eval/run_eval.py`) — the same "don't just retry blindly, respect what the failure actually tells you" instinct as the retry/DLQ design in Order-Processing-Pipeline itself.
 
+Two bugs found while building the LangGraph version, both fixed with tests:
+
+- **The indexer and the keyword tool had no ignore list for virtualenvs.** Pointed at a working copy that contained a `.venv`, indexing ran for 14 minutes without finishing (it was embedding every installed package), and the keyword tool returned hits from `pip` and `pydantic` files. The first full evaluation run was contaminated by exactly that (the out-of-scope "colour" question showed 8 keyword hits instead of 0), so it was discarded and re-run after the fix. Both now share one file list (`ingest.find_source_files`, which skips `.venv`, `node_modules` and similar), so the keyword tool can never read a file that was not indexed.
+- **The Gemini client only retried HTTP 429.** A live test failed on a 503 and an evaluation run died on a 30-second read timeout. It now also retries 500, 502, 503, 504 and read timeouts with exponential backoff, and still does not retry client errors such as a 400.
+
 ## Known limitations (disclosed, not fixed yet)
 
 - Chunking is fixed-size, not syntax-aware — a function split across a chunk boundary loses context.
@@ -104,6 +155,6 @@ The first real eval run hit a 429 (rate limited) partway through — the free Ge
 
 ## Possible extensions
 
-- **LangChain / LlamaIndex adapter:** the core (retrieval, decision policy, citation-grounded generation) is deliberately hand-rolled and framework-free — that's what makes it possible to test and reason about exactly (see the Architecture section above). A thin LangChain or LlamaIndex wrapper around the same core would be a natural add-on for roles that name those frameworks specifically, without rewriting the logic they'd just be wrapping.
+- **More framework adapters:** the LangGraph version above shows the policy survives being moved into a framework unchanged. A LlamaIndex or LangChain-retriever version would be the next comparison; it would change retrieval and prompting as well as orchestration, so it would need its own, more careful evaluation.
 - **Hybrid retrieval** (lexical + semantic) to fix the exact gap the q6 spotlight surfaced, rather than relying on the keyword-search fallback to catch it after the fact.
 - **Syntax-aware chunking** (function/class boundaries via an AST parse) instead of fixed-size windows.

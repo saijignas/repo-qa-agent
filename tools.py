@@ -5,6 +5,8 @@ for "MAX_RETRIES" or "SETNX") and a raw file fetch (for when the agent
 needs to see a whole file, not just a 40-line indexed chunk)."""
 from pathlib import Path
 
+from ingest import find_source_files
+
 
 def search_keyword(repo_root, term, max_hits=8):
     """Plain substring search across indexed source files. Returns a
@@ -13,11 +15,9 @@ def search_keyword(repo_root, term, max_hits=8):
     vector search instead of duplicating it."""
     repo_root = Path(repo_root)
     hits = []
-    for path in sorted(repo_root.rglob("*")):
-        if not path.is_file() or path.suffix not in {".py", ".md", ".yml", ".yaml"}:
-            continue
-        if "__pycache__" in path.parts or ".git" in path.parts:
-            continue
+    # the same file set the indexer uses (ingest.find_source_files), so the keyword
+    # tool can never read files, such as a virtualenv, that were never indexed
+    for path in find_source_files(repo_root):
         rel_path = path.relative_to(repo_root).as_posix()
         for i, line in enumerate(path.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
             if term.lower() in line.lower():
