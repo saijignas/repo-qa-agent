@@ -13,6 +13,7 @@ A retrieval-augmented Q&A agent over a real codebase (indexed here: [Order-Proce
 - **2/2 out-of-scope questions correctly declined**, not hallucinated
 - **17/17 tests pass** against real infrastructure (Chroma + live Gemini calls), 2 of which skip cleanly (not fake-pass) without an API key
 - **LangGraph version of the same policy** (`graph_agent.py`): on all 8 questions, in 2 live runs each, it made the same decisions as the hand-rolled agent (same tools, same sources, same answer-or-decline), at about 3 ms of orchestration overhead; see [LangGraph version](#langgraph-version-graph_agentpy)
+- **MCP server** (`mcp_server.py`): the repo tools and the agent exposed to Claude Desktop, Claude Code or any MCP client over stdio; file access is restricted to indexed files, every input is bounded, and it is tested both in-process and as a real stdio subprocess; see [MCP server](#mcp-server-mcp_serverpy)
 
 ## Quickstart
 
@@ -120,6 +121,57 @@ How to read it:
 - **What the framework does buy here:** an explicit, inspectable graph, a diagram generated from the code, a per-question `path` of visited nodes, and a structure that extends naturally (checkpointing, human-in-the-loop interrupts, more tools). **What it costs:** the policy is 36 lines of plain Python in `agent.py` and about 190 lines (83 inside `build_graph`) here. For a five-step policy the hand-rolled version is the simpler choice; the graph earns its keep when the flow grows branches, state or approvals.
 - **Limits.** 8 questions and 2 runs per engine is a small sample. The automated checks verify behaviour (declined or not, citations present and pointing at real files, expected source used); they do not judge whether an answer is *correct*, so read the saved answers for that.
 
+## MCP server (`mcp_server.py`)
+
+An [MCP](https://modelcontextprotocol.io) (Model Context Protocol) server, so an AI client such as Claude Desktop or Claude Code can use this project's tools directly. Built on the official Python SDK (`mcp` 2.x, `MCPServer`).
+
+| Tool | What it does |
+|---|---|
+| `list_files` | the files the other tools can see (indexed file types only) |
+| `search_keyword` | exact, case-insensitive substring search, returns `{source, line_number, line_text}` |
+| `fetch_file` | read an indexed file, or lines `start_line` to `end_line` |
+| `ask_repo` | the full agent: retrieval, keyword fallback, a cited answer or a decline; returns `{answer, sources, tools_used}` |
+
+**Run and register it.** Configuration is read from environment variables, not tool arguments, so a client cannot point the server at another directory:
+
+```bash
+python ingest.py /path/to/repo --store ./chroma_store      # build the index once
+```
+
+```json
+{
+  "mcpServers": {
+    "repo-qa": {
+      "command": "/path/to/repo-qa-agent/.venv/bin/python",
+      "args": ["/path/to/repo-qa-agent/mcp_server.py"],
+      "env": {
+        "REPO_QA_REPO_ROOT": "/path/to/repo",
+        "REPO_QA_STORE": "/path/to/repo-qa-agent/chroma_store"
+      }
+    }
+  }
+}
+```
+
+That block is the standard `mcpServers` entry for Claude Desktop's config file; Claude Code can register the same command with `claude mcp add` (check `claude mcp add --help` for the exact flags). `GEMINI_API_KEY` is only needed by `ask_repo` and is read from the server's environment: leave it out of the config file and set it in the environment instead. Without it, `ask_repo` returns a clear error and the other three tools keep working.
+
+**Safety decisions.** An MCP tool is called by a model, so its inputs are treated as untrusted:
+- **The file tools see only what the indexer indexes** (`.py`, `.md`, `.yml`, `.yaml`, minus `.git`, virtualenvs, `node_modules` and similar). A `.env`, a key file, a path containing `..`, an absolute path and a file inside `.venv` are all refused, and the tests assert that the secret's contents never appear in the error text.
+- **Everything is bounded:** search term length, hit count, question length, `k`, and file output size (truncation is announced in the text).
+- **Anticipated failures are plain tool errors** (bad input, refused path, no index, no API key, a failed model request); anything unexpected is reported as a generic error with no paths or stack trace sent to the client.
+- **stdout is the protocol on the stdio transport.** The Gemini client prints retry notices, so `ask_repo` redirects the agent's output to stderr. (mcp 2.x also diverts stray stdout by itself, so this is belt and braces: a mutation test that removed the redirect still passed against 2.x, which is why the code comment says so rather than claiming the redirect alone is what protects the stream.)
+
+**Verified.** 33 tests (`tests/test_mcp_server.py`): every tool and refusal through an in-process MCP client, plus a real server subprocess over stdio (listing tools, serving calls, refusing `.env`, and an `ask_repo` call whose stub agent prints to stdout). `eval/mcp_smoke.py` runs the real server with the real agent and live Gemini; its output on the Order-Processing-Pipeline index:
+
+```
+tools: ['list_files', 'search_keyword', 'fetch_file', 'ask_repo']
+search_keyword MAX_RETRIES -> [('consumer/worker.py', 16), ('consumer/worker.py', 25), ('consumer/worker.py', 59)]
+fetch_file ../.env -> is_error: True | Error executing tool fetch_file: not an indexed file: '../.env'. ...
+answer: MAX_RETRIES is set to 3 [shared/rabbitmq.py:28]. It is defined in the file `shared/rabbitmq.py` ...
+```
+
+What is not tested or claimed: I did not drive it from the Claude Desktop or Claude Code UI, only from the SDK's own client over stdio, and there is no authentication because stdio servers run as the user who launched them (an HTTP deployment would need it).
+
 ## Tests
 
 ```bash
@@ -127,7 +179,7 @@ pip install -r requirements.txt
 python -m pytest tests/ -v
 ```
 
-49 tests: all pass with `GEMINI_API_KEY` set, and 47 pass plus 2 skip cleanly (rather than fake-passing) when the key is absent. The 2 skipped call live Gemini: citation correctness and decline-on-irrelevant-context. The LangGraph tests (`tests/test_graph_agent.py`) use stubs, drive every route through the graph, and check that it makes the same decisions as the hand-rolled agent, including the case where the best distance equals the threshold exactly.
+82 tests: all pass with `GEMINI_API_KEY` set, and 80 pass plus 2 skip cleanly (rather than fake-passing) when the key is absent. The 2 skipped call live Gemini: citation correctness and decline-on-irrelevant-context. The LangGraph tests (`tests/test_graph_agent.py`) use stubs, drive every route through the graph, and check that it makes the same decisions as the hand-rolled agent, including the case where the best distance equals the threshold exactly. The MCP tests are described above.
 
 ## Setup
 
