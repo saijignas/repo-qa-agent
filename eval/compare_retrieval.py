@@ -2,7 +2,7 @@
 LangChain Chroma wrapper on every in-scope evaluation question. Because the wrapper
 reuses the same embedding model and the same index, the two should return identical
 chunks in identical order with identical distances; this checks it on the real
-questions and the real index, and reports precision@k for both.
+questions and the real index, and reports hit rate@k (an expected source file appears in the top k) for both.
 
 Usage: python eval/compare_retrieval.py [--store ./chroma_store] [--collection repo_qa] [-k 5]
 """
@@ -46,5 +46,5 @@ if __name__ == "__main__":
         hits_lc += hl
         print(f"{q['id']}: same chunks and order: {same} | hit (hand-written / LangChain): {hm} / {hl}")
     n = len(qs)
-    print(f"\nprecision@{a.k}: hand-written {hits_mine}/{n} = {hits_mine / n:.2f}, LangChain {hits_lc}/{n} = {hits_lc / n:.2f}")
+    print(f"\nhit rate@{a.k}: hand-written {hits_mine}/{n} = {hits_mine / n:.2f}, LangChain {hits_lc}/{n} = {hits_lc / n:.2f}")
     print(f"identical chunks in identical order on {same_chunks}/{n} questions; largest distance difference {max_gap:.2e}")

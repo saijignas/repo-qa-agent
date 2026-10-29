@@ -1,5 +1,5 @@
 {
-  "retrieval_precision_at_k": 0.8333333333333334,
+  "retrieval_hit_rate_at_k": 0.8333333333333334,
   "retrieval_results": [
     {
       "id": "q1",

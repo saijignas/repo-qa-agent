@@ -8,12 +8,12 @@ A retrieval-augmented Q&A agent over a real codebase (indexed here: [Order-Proce
 
 ## Results at a glance
 
-- **Retrieval precision@5: 0.83** (5/6 in-scope questions) — the one miss is root-caused below, not hidden
+- **Retrieval hit rate@5: 0.83** (an expected source file appears in the top 5 results for 5 of 6 in-scope questions; this is hit rate, not conventional precision@5, see [Evaluation](#evaluation)) — the one miss is root-caused below, not hidden
 - **6/6 in-scope questions answered correctly with real `[file:line]` citations**, including one saved by the tool fallback after retrieval alone missed
 - **2/2 out-of-scope questions correctly declined**, not hallucinated
 - **17/17 tests pass** against real infrastructure (Chroma + live Gemini calls), 2 of which skip cleanly (not fake-pass) without an API key
 - **LangGraph version of the same policy** (`graph_agent.py`): on all 8 questions, in 2 live runs each, it made the same decisions as the hand-rolled agent (same tools, same sources, same answer-or-decline), at about 3 ms of orchestration overhead; see [LangGraph version](#langgraph-version-graph_agentpy)
-- **LangChain-wrapped version** (`langchain_agent.py`): the same graph with LangChain's Chroma wrapper, prompt template and Gemini chat model swapped in. On the real index it retrieves identical chunks in identical order (precision@5 0.83 for both), and in 2 live runs it made the same decisions on all 8 questions; see [LangChain-wrapped version](#langchain-wrapped-version-langchain_agentpy)
+- **LangChain-wrapped version** (`langchain_agent.py`): the same graph with LangChain's Chroma wrapper, prompt template and Gemini chat model swapped in. On the real index it retrieves identical chunks in identical order (hit rate@5 0.83 for both), and in 2 live runs it made the same decisions on all 8 questions; see [LangChain-wrapped version](#langchain-wrapped-version-langchain_agentpy)
 - **MCP server** (`mcp_server.py`): the repo tools and the agent exposed to Claude Desktop, Claude Code or any MCP client over stdio; file access is restricted to indexed files, every input is bounded, and it is tested both in-process and as a real stdio subprocess; see [MCP server](#mcp-server-mcp_serverpy)
 
 ## Quickstart
@@ -52,7 +52,9 @@ flowchart TD
 
 ## Evaluation
 
-`eval/questions.json` — 8 hand-written questions: 6 in-scope (each tagged with the source file(s) that should answer it, for measuring retrieval precision) and 2 deliberately out-of-scope (to check the agent declines instead of hallucinating). `eval/run_eval.py` runs both retrieval-only precision@k and the full RAG-vs-no-context-baseline comparison; full transcript in `eval/eval_results.json`.
+`eval/questions.json` — 8 hand-written questions: 6 in-scope (each tagged with the source file(s) that should answer it, for measuring retrieval) and 2 deliberately out-of-scope (to check the agent declines instead of hallucinating). `eval/run_eval.py` runs both the retrieval-only hit rate@k and the full RAG-vs-no-context-baseline comparison; full transcript in `eval/eval_results.json`.
+
+**What the retrieval number is, exactly.** For each in-scope question, a hit means at least one of its `expected_sources` appears among the source files of the top-k retrieved chunks. The score is hits divided by in-scope questions, so 0.83 is 5 of 6. That is **hit rate@k** (also called success@k). It is not conventional precision@k, which would be the share of the k returned results that are relevant, and it is not recall of all relevant files. It is also measured at file level, not chunk level, so a hit says the right file was retrieved, not that the exact lines were. With only 6 in-scope questions, one question moves the score by 0.17. A stricter evaluation would label relevant chunks and report precision@k, MRR and nDCG.
 
 | ID | Question | Retrieval found the right file (top-5)? | Fallback tool fired? | Final answer | Verdict |
 |----|----------|:---:|:---:|---|:---:|
@@ -147,7 +149,7 @@ python eval/compare_retrieval.py        # retrieval only, no model calls
 
 ### Measured
 
-**Retrieval (no model calls, `eval/compare_retrieval.py`, real index and real questions):** identical chunks in identical order on 6 of 6 in-scope questions, largest distance difference 0, and the same precision@5, 5/6 = 0.83, for both. The one miss is the same q6 miss disclosed above.
+**Retrieval (no model calls, `eval/compare_retrieval.py`, real index and real questions):** identical chunks in identical order on 6 of 6 in-scope questions, largest distance difference 0, and the same hit rate@5, 5/6 = 0.83, for both. The one miss is the same q6 miss disclosed above.
 
 **End to end (live Gemini, 8 questions, 2 runs, `eval/run_engine_eval.py --engines langchain --merge`):**
 
@@ -246,6 +248,7 @@ Two bugs found while building the LangGraph version, both fixed with tests:
 ## Known limitations (disclosed, not fixed yet)
 
 - Chunking is fixed-size, not syntax-aware — a function split across a chunk boundary loses context.
+- The retrieval metric is hit rate@5 at file level (see [Evaluation](#evaluation)); it does not measure how many of the 5 results are relevant, nor chunk-level correctness.
 - Retrieval is pure semantic search; no lexical/BM25 hybrid layer yet, which is exactly what caused the q6 retrieval miss above.
 - The low-confidence fallback threshold (`LOW_CONFIDENCE_THRESHOLD` in `agent.py`) was set from a small amount of empirical testing on one repo, not tuned across multiple repos or corpus sizes.
 

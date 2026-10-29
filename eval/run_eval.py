@@ -1,8 +1,11 @@
 """Evaluates the repo-QA agent two ways:
 
-1. Retrieval precision@k: for each in-scope question, does at least one
+1. Retrieval hit rate@k: for each in-scope question, does at least one
    of its expected_sources actually appear in the top-k vector-search
-   results? Measured on retrieval alone, no LLM call needed.
+   results? Hit rate = questions with a hit / in-scope questions. This is
+   hit rate (success@k) at file level, not conventional precision@k (the
+   share of the k results that are relevant). Measured on retrieval alone,
+   no LLM call needed.
 
 2. RAG vs. no-retrieval baseline: for every question (including the
    deliberately out-of-scope ones), calls the full agent (retrieval +
@@ -34,7 +37,7 @@ Question: {question}
 Answer:"""
 
 
-def eval_retrieval_precision(questions, store_dir, collection_name, k=5):
+def eval_retrieval_hit_rate(questions, store_dir, collection_name, k=5):
     collection = get_collection(store_dir, collection_name)
     results = []
     for q in questions:
@@ -44,8 +47,8 @@ def eval_retrieval_precision(questions, store_dir, collection_name, k=5):
         retrieved_sources = {h["source"] for h in hits}
         hit = bool(retrieved_sources & set(q["expected_sources"]))
         results.append({"id": q["id"], "hit": hit, "retrieved_sources": sorted(retrieved_sources)})
-    precision_at_k = sum(r["hit"] for r in results) / len(results) if results else None
-    return precision_at_k, results
+    hit_rate_at_k = sum(r["hit"] for r in results) / len(results) if results else None
+    return hit_rate_at_k, results
 
 
 def eval_rag_vs_baseline(questions, repo_root, store_dir, collection_name):
@@ -76,7 +79,7 @@ if __name__ == "__main__":
     parser.add_argument("--store", default="../chroma_store")
     parser.add_argument("--collection", default="repo_qa")
     parser.add_argument("-k", type=int, default=5)
-    parser.add_argument("--skip-generation", action="store_true", help="Only run retrieval precision@k, skip LLM calls entirely")
+    parser.add_argument("--skip-generation", action="store_true", help="Only run retrieval hit rate@k, skip LLM calls entirely")
     parser.add_argument("--out", default="eval_results.json")
     args = parser.parse_args()
 
@@ -84,13 +87,13 @@ if __name__ == "__main__":
     store_dir = Path(args.store).resolve()
     repo_root = Path(args.repo_root).resolve()
 
-    precision, retrieval_results = eval_retrieval_precision(questions, store_dir, args.collection, k=args.k)
-    print(f"Retrieval precision@{args.k}: {precision:.2f} ({sum(r['hit'] for r in retrieval_results)}/{len(retrieval_results)} in-scope questions)")
+    hit_rate, retrieval_results = eval_retrieval_hit_rate(questions, store_dir, args.collection, k=args.k)
+    print(f"Retrieval hit rate@{args.k}: {hit_rate:.2f} ({sum(r['hit'] for r in retrieval_results)}/{len(retrieval_results)} in-scope questions)")
     for r in retrieval_results:
         status = "HIT " if r["hit"] else "MISS"
         print(f"  [{status}] {r['id']}: retrieved {r['retrieved_sources']}")
 
-    output = {"retrieval_precision_at_k": precision, "retrieval_results": retrieval_results}
+    output = {"retrieval_hit_rate_at_k": hit_rate, "retrieval_results": retrieval_results}
 
     if not args.skip_generation:
         comparisons = eval_rag_vs_baseline(questions, repo_root, store_dir, args.collection)
